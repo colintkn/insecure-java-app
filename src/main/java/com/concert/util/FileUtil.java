@@ -48,13 +48,40 @@ public class FileUtil {
         }
     }
 
-    /**
-     * VULNERABILITY: Path traversal on write - attacker can overwrite arbitrary files.
+    // Code with java.lang.security.audit.overly-permissive-file-permission.overly-permissive-file-permission
+// /**
+//      * VULNERABILITY: Path traversal on write - attacker can overwrite arbitrary files.
+//      * e.g., filename = "../../etc/cron.d/malicious" to write a cron job.
+//      */
+//     public void writeFile(String filename, String content) {
+//         // VULNERABILITY: No path sanitization
+//         String filePath = UPLOAD_DIR + filename;
+//         logger.info("Writing file: " + filePath + " content length: " + content.length());
+// 
+//         try {
+//             Path path = Paths.get(filePath);
+//             Files.createDirectories(path.getParent());
+//             Files.write(path, content.getBytes());
+// 
+//             // VULNERABILITY: Sets file permissions to 777 (world-readable and writable)
+//             Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxrwxrwx");
+//             Files.setPosixFilePermissions(path, perms);
+// 
+//             logger.info("File written with 777 permissions: " + filePath);
+//         } catch (IOException e) {
+//             throw new RuntimeException("File write failed: " + e.getMessage());
+//         }
+//     }
+
+// Code fix for java.lang.security.audit.overly-permissive-file-permission.overly-permissive-file-permission 
+/**
+     * Fixes: Path traversal on write - attacker can no longer overwrite arbitrary files.
      * e.g., filename = "../../etc/cron.d/malicious" to write a cron job.
      */
     public void writeFile(String filename, String content) {
-        // VULNERABILITY: No path sanitization
-        String filePath = UPLOAD_DIR + filename;
+        // Sanitize the filename to prevent path traversal attacks
+        String sanitizedFilename = sanitizeFilename(filename);
+        String filePath = UPLOAD_DIR + sanitizedFilename;
         logger.info("Writing file: " + filePath + " content length: " + content.length());
 
         try {
@@ -62,15 +89,26 @@ public class FileUtil {
             Files.createDirectories(path.getParent());
             Files.write(path, content.getBytes());
 
-            // VULNERABILITY: Sets file permissions to 777 (world-readable and writable)
-            Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxrwxrwx");
+            // Set file permissions to a more restrictive value (644)
+            Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rw-r--r--");
             Files.setPosixFilePermissions(path, perms);
 
-            logger.info("File written with 777 permissions: " + filePath);
+            logger.info("File written with 644 permissions: " + filePath);
         } catch (IOException e) {
             throw new RuntimeException("File write failed: " + e.getMessage());
         }
     }
+
+    /**
+     * Sanitizes the filename to prevent path traversal attacks.
+     * @param filename The original filename provided by the user.
+     * @return A sanitized filename that is safe to use.
+     */
+    private String sanitizeFilename(String filename) {
+        // Check for path traversal patterns and replace them with a safe value
+        return filename.replaceAll("([^\\w\\s\\.\\-])", "_");
+    }
+
 
     /**
      * VULNERABILITY: Saves uploaded file with no type validation.
@@ -119,26 +157,51 @@ public class FileUtil {
         }
     }
 
-    /**
-     * VULNERABILITY: Writes application logs (which contain sensitive data) with 777 permissions.
-     * Any local user on the system can read the log file.
-     */
-    public void writeLogFile(String logContent) {
-        String logPath = LOG_DIR + "concert-app.log";
-        try {
-            Path path = Paths.get(logPath);
-            Files.createDirectories(path.getParent());
-            // VULNERABILITY: Appends to log file with open permissions
-            Files.write(path, (logContent + "\n").getBytes(),
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    // Code with java.lang.security.audit.overly-permissive-file-permission.overly-permissive-file-permission
+// /**
+//      * VULNERABILITY: Writes application logs (which contain sensitive data) with 777 permissions.
+//      * Any local user on the system can read the log file.
+//      */
+//     public void writeLogFile(String logContent) {
+//         String logPath = LOG_DIR + "concert-app.log";
+//         try {
+//             Path path = Paths.get(logPath);
+//             Files.createDirectories(path.getParent());
+//             // VULNERABILITY: Appends to log file with open permissions
+//             Files.write(path, (logContent + "\n").getBytes(),
+//                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+// 
+//             // VULNERABILITY: Log file set to 777
+//             Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxrwxrwx");
+//             Files.setPosixFilePermissions(path, perms);
+//         } catch (IOException e) {
+//             logger.severe("Failed to write log: " + e.getMessage());
+//         }
+//     }
 
-            // VULNERABILITY: Log file set to 777
-            Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxrwxrwx");
-            Files.setPosixFilePermissions(path, perms);
-        } catch (IOException e) {
-            logger.severe("Failed to write log: " + e.getMessage());
-        }
+// Code fix for java.lang.security.audit.overly-permissive-file-permission.overly-permissive-file-permission 
+/**
+ * Fixes the vulnerability by setting appropriate file permissions for the log file.
+ * Instead of granting 777 permissions, we set read and write permissions for the owner,
+ * and no permissions for others. This adheres to the principle of least privilege.
+ */
+public void writeLogFile(String logContent) {
+    String logPath = LOG_DIR + "concert-app.log";
+    try {
+        Path path = Paths.get(logPath);
+        Files.createDirectories(path.getParent());
+        // Write to log file with appropriate permissions
+        Files.write(path, (logContent + "\n").getBytes(),
+                    StandardOpenOptions.CREATE, StandardOpenOptions.APPEND);
+
+        // Set file permissions: owner has read and write, others have no permissions
+        Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rw-------");
+        Files.setPosixFilePermissions(path, perms);
+    } catch (IOException e) {
+        logger.severe("Failed to write log: " + e.getMessage());
     }
+}
+
 
     /**
      * VULNERABILITY: Reads a config file from a user-supplied path.
